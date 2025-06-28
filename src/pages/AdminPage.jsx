@@ -5,17 +5,29 @@ import "./AdminPage.css";
 const socket = io();
 
 const AdminPage = () => {
-  const missions = [1, 2, 3, 4, 5];
+  const missions = [1, 2, 3, 4, 5, 6, 7];
   const [activeMissions, setActiveMissions] = useState({});
   const [completedMissions, setCompletedMissions] = useState({});
   const [timers, setTimers] = useState({});
+  const [runningMissions, setRunningMissions] = useState([]);
+  const [failedMissions, setFailedMissions] = useState([]);
+  const [failureTriggers, setFailureTriggers] = useState({});
   const timerRefs = useRef({});
 
-  // ✅ 완료된 미션은 제외하고, 실패나 진행중인 미션이 있을 때만 잠금
+  const missionDurations = {
+    1: 8,
+    2: 300,
+    3: 300,
+    4: 300,
+    5: 300,
+    6: 30,
+    7: 5,
+  };
+
   const isAnyBlocked = missions.some((id) => {
     const isCompleted = completedMissions[id];
     const isActive = activeMissions[id];
-    const hasFailed = timers[id] > 0 && !isActive && !isCompleted;
+    const hasFailed = failedMissions.includes(id);
     return !isCompleted && (isActive || hasFailed);
   });
 
@@ -27,11 +39,17 @@ const AdminPage = () => {
 
   const startTimer = (num) => {
     if (timerRefs.current[num]) return;
+    const total = missionDurations[num] || 10;
+    setTimers((prev) => ({ ...prev, [num]: total }));
     timerRefs.current[num] = setInterval(() => {
-      setTimers((prev) => ({
-        ...prev,
-        [num]: (prev[num] || 0) + 1,
-      }));
+      setTimers((prev) => {
+        const newTime = (prev[num] || total) - 1;
+        if (newTime <= 0) {
+          clearInterval(timerRefs.current[num]);
+          timerRefs.current[num] = null;
+        }
+        return { ...prev, [num]: newTime };
+      });
     }, 1000);
   };
 
@@ -62,7 +80,8 @@ const AdminPage = () => {
     stopTimer(num);
     setActiveMissions((prev) => ({ ...prev, [num]: false }));
     setCompletedMissions((prev) => ({ ...prev, [num]: false }));
-    setTimers((prev) => ({ ...prev, [num]: 0 }));
+    setTimers((prev) => ({ ...prev, [num]: missionDurations[num] || 10 }));
+    setFailureTriggers((prev) => ({ ...prev, [num]: 0 }));
     socket.emit("admin-reset-mission", num);
   };
 
@@ -71,7 +90,13 @@ const AdminPage = () => {
     missions.forEach((num) => stopTimer(num));
     setActiveMissions({});
     setCompletedMissions({});
-    setTimers({});
+    setTimers(
+      missions.reduce((acc, id) => {
+        acc[id] = missionDurations[id] || 10;
+        return acc;
+      }, {})
+    );
+    setFailureTriggers({});
     socket.emit("admin-reset-all");
   };
 
@@ -82,6 +107,33 @@ const AdminPage = () => {
     setCompletedMissions((prev) => ({ ...prev, [num]: true }));
     socket.emit("mission-complete", num);
   };
+
+  useEffect(() => {
+    socket.emit("request-global-status");
+    socket.on("global-status", ({ running, failed, completed, failureTriggers: incomingTriggers }) => {
+      setRunningMissions(running);
+      setFailedMissions(failed);
+      const completedMap = {};
+      completed.forEach((id) => (completedMap[id] = true));
+      setCompletedMissions(completedMap);
+
+      if (incomingTriggers) {
+        setFailureTriggers(incomingTriggers);
+
+        for (const [id, trigger] of Object.entries(incomingTriggers)) {
+          if (parseInt(trigger) === 1) {
+            socket.emit("clear-failure-trigger", parseInt(id));
+            setTimeout(() => window.location.reload(), 200);
+            break;
+          }
+        }
+      }
+    });
+
+    return () => {
+      socket.off("global-status");
+    };
+  }, []);
 
   useEffect(() => {
     socket.on("admin-mission-activate", (missionId) => {
@@ -101,14 +153,13 @@ const AdminPage = () => {
         {missions.map((num) => {
           const isThisActive = activeMissions[num];
           const isCompleted = completedMissions[num];
-          const hasFailed = timers[num] > 0 && !isThisActive && !isCompleted;
+          const hasFailed = failedMissions.includes(num);
 
-          // 다른 미션이 진행 중 또는 실패 상태인지 확인
           const anyOtherBlocking = missions.some((id) => {
             if (id === num) return false;
             const active = activeMissions[id];
             const complete = completedMissions[id];
-            const failed = timers[id] > 0 && !active && !complete;
+            const failed = failedMissions.includes(id);
             return !complete && (active || failed);
           });
 
