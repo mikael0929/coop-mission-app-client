@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 
-const socket = io();
+const socket = io("https://coop-mission-app-server.onrender.com");
 const missionDurations = {
   1: 8,
   2: 300,

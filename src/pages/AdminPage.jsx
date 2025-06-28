@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import "./AdminPage.css";
 
-const socket = io();
+const socket = io("https://coop-mission-app-server.onrender.com");
 
 const AdminPage = () => {
   const missions = [1, 2, 3, 4, 5, 6, 7];
