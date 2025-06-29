@@ -31,7 +31,6 @@ const MissionPage = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const timerRef = useRef(null);
-  const statusFetched = useRef(false);
 
   useEffect(() => {
     const handleGlobal = ({ running, failed, completed }) => {
@@ -40,11 +39,23 @@ const MissionPage = () => {
         setStatus("done");
       } else if (failed.includes(missionNum)) {
         setStatus("failed");
+      } else if (running.includes(missionNum)) {
+        setStatus("active");
+        let duration = missionDurations[missionNum] || 10;
+        setTimeLeft(duration);
+        timerRef.current = setInterval(() => {
+          duration -= 1;
+          setTimeLeft(duration);
+          if (duration <= 0) {
+            clearInterval(timerRef.current);
+            setStatus("failed");
+            socket.emit("mark-failed", missionNum);
+          }
+        }, 1000);
       } else {
         setStatus("ready");
         setTimeLeft(missionDurations[missionNum] || 10);
       }
-      statusFetched.current = true;
     };
     socket.emit("request-global-status");
     socket.on("global-status", handleGlobal);
@@ -102,7 +113,7 @@ const MissionPage = () => {
     }
   }, [missionNum, status]);
 
-  if (!statusFetched.current || status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 확인 중...</div>;
+  if (status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 확인 중...</div>;
   if (status === "failed") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>❌ 미션 {missionId} 실패</h1><p>선생님께 가세요</p></div>;
   if (status === "done") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>✅ 미션 {missionId} 완료</h1><p>성공! 선생님께 확인 받으세요</p></div>;
   if (status === "active") return (

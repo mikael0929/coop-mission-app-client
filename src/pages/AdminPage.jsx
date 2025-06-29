@@ -145,6 +145,7 @@ const AdminPage = () => {
     socket.emit("request-global-status");
     socket.on("global-status", (serverState) => {
       const newStates = {};
+      const newTimers = {};
       for (let i = 1; i <= 7; i++) {
         newStates[i] = {
           reset: serverState[i]?.reset || false,
@@ -152,8 +153,10 @@ const AdminPage = () => {
           failed: serverState[i]?.failed || false,
           inProgress: serverState[i]?.inProgress || false,
         };
+        newTimers[i] = missionDurations[i] || 10;
       }
       setMissionStates(newStates);
+      setTimers(newTimers);
     });
 
     return () => {
