@@ -154,6 +154,9 @@ const AdminPage = () => {
           inProgress: serverState.running?.includes(i),
         };
         newTimers[i] = missionDurations[i] || 10;
+        if (serverState.running?.includes(i)) {
+          startTimer(i);
+        }
       }
       setMissionStates(newStates);
       setTimers(newTimers);
