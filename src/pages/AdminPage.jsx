@@ -6,12 +6,8 @@ const socket = io("https://coop-mission-app-server.onrender.com");
 
 const AdminPage = () => {
   const missions = [1, 2, 3, 4, 5, 6, 7];
-  const [activeMissions, setActiveMissions] = useState({});
-  const [completedMissions, setCompletedMissions] = useState({});
+  const [missionStates, setMissionStates] = useState({});
   const [timers, setTimers] = useState({});
-  const [runningMissions, setRunningMissions] = useState([]);
-  const [failedMissions, setFailedMissions] = useState([]);
-  const [failureTriggers, setFailureTriggers] = useState({});
   const timerRefs = useRef({});
 
   const missionDurations = {
@@ -23,13 +19,6 @@ const AdminPage = () => {
     6: 30,
     7: 5,
   };
-
-  const isAnyBlocked = missions.some((id) => {
-    const isCompleted = completedMissions[id];
-    const isActive = activeMissions[id];
-    const hasFailed = failedMissions.includes(id);
-    return !isCompleted && (isActive || hasFailed);
-  });
 
   const formatTime = (sec) => {
     const m = String(Math.floor(sec / 60)).padStart(2, "0");
@@ -59,89 +48,116 @@ const AdminPage = () => {
   };
 
   const toggleMission = (num) => {
-    if (isAnyBlocked && !activeMissions[num]) return;
+    const state = missionStates[num] || {};
+    const isOtherMissionRunning = Object.entries(missionStates).some(
+      ([id, s]) => Number(id) !== num && s.inProgress
+    );
+    if (isOtherMissionRunning || state.failed || state.success) return;
 
-    setActiveMissions((prev) => {
-      const nowActive = !prev[num];
-      if (nowActive) {
-        startTimer(num);
-        setCompletedMissions((c) => ({ ...c, [num]: false }));
-      } else {
-        stopTimer(num);
-      }
-      return { ...prev, [num]: nowActive };
-    });
+    const isActive = !state.inProgress;
 
-    socket.emit("admin-mission-activate", num);
+    setMissionStates((prev) => ({
+      ...prev,
+      [num]: {
+        ...prev[num],
+        inProgress: isActive,
+        waiting: !isActive,
+      },
+    }));
+
+    if (isActive) startTimer(num);
+    else stopTimer(num);
+
+    socket.emit("mission-start", num);
   };
 
   const resetMission = (num) => {
     if (!window.confirm(`미션 ${num}을 초기화할까요?`)) return;
     stopTimer(num);
-    setActiveMissions((prev) => ({ ...prev, [num]: false }));
-    setCompletedMissions((prev) => ({ ...prev, [num]: false }));
     setTimers((prev) => ({ ...prev, [num]: missionDurations[num] || 10 }));
-    setFailureTriggers((prev) => ({ ...prev, [num]: 0 }));
+    setMissionStates((prev) => ({
+      ...prev,
+      [num]: {
+        reset: true,
+        success: false,
+        failed: false,
+        inProgress: false,
+      },
+    }));
     socket.emit("admin-reset-mission", num);
+    setTimeout(() => {
+      setMissionStates((prev) => ({
+        ...prev,
+        [num]: {
+          ...prev[num],
+          reset: false,
+        },
+      }));
+    }, 100);
   };
 
   const resetAll = () => {
     if (!window.confirm("전체 미션을 초기화할까요?")) return;
-    missions.forEach((num) => stopTimer(num));
-    setActiveMissions({});
-    setCompletedMissions({});
-    setTimers(
-      missions.reduce((acc, id) => {
-        acc[id] = missionDurations[id] || 10;
-        return acc;
-      }, {})
-    );
-    setFailureTriggers({});
+    missions.forEach((num) => {
+      stopTimer(num);
+      setTimers((prev) => ({ ...prev, [num]: missionDurations[num] || 10 }));
+    });
+    const newStates = {};
+    missions.forEach((num) => {
+      newStates[num] = {
+        reset: true,
+        success: false,
+        failed: false,
+        inProgress: false,
+      };
+    });
+    setMissionStates(newStates);
     socket.emit("admin-reset-all");
+    setTimeout(() => {
+      const clearedStates = {};
+      missions.forEach((num) => {
+        clearedStates[num] = {
+          ...newStates[num],
+          reset: false,
+        };
+      });
+      setMissionStates(clearedStates);
+    }, 100);
   };
 
   const completeMission = (num) => {
     if (!window.confirm(`미션 ${num}을 완료로 표시할까요?`)) return;
+    if (missionStates[num]?.success) return; // 이미 성공 상태일 경우 무시
     stopTimer(num);
-    setActiveMissions((prev) => ({ ...prev, [num]: false }));
-    setCompletedMissions((prev) => ({ ...prev, [num]: true }));
+    setMissionStates((prev) => ({
+      ...prev,
+      [num]: {
+        ...prev[num],
+        inProgress: false,
+        success: true,
+        failed: false,
+      },
+    }));
     socket.emit("mission-complete", num);
   };
 
   useEffect(() => {
     socket.emit("request-global-status");
-    socket.on("global-status", ({ running, failed, completed, failureTriggers: incomingTriggers }) => {
-      setRunningMissions(running);
-      setFailedMissions(failed);
-      const completedMap = {};
-      completed.forEach((id) => (completedMap[id] = true));
-      setCompletedMissions(completedMap);
-
-      if (incomingTriggers) {
-        setFailureTriggers(incomingTriggers);
-
-        for (const [id, trigger] of Object.entries(incomingTriggers)) {
-          if (parseInt(trigger) === 1) {
-            socket.emit("clear-failure-trigger", parseInt(id));
-            setTimeout(() => window.location.reload(), 200);
-            break;
-          }
-        }
+    socket.on("global-status", (serverState) => {
+      const newStates = {};
+      for (let i = 1; i <= 7; i++) {
+        newStates[i] = {
+          reset: serverState[i]?.reset || false,
+          success: serverState[i]?.success || false,
+          failed: serverState[i]?.failed || false,
+          inProgress: serverState[i]?.inProgress || false,
+        };
       }
+      setMissionStates(newStates);
     });
 
     return () => {
       socket.off("global-status");
-    };
-  }, []);
-
-  useEffect(() => {
-    socket.on("admin-mission-activate", (missionId) => {
-      setActiveMissions((prev) => ({ ...prev, [missionId]: true }));
-      startTimer(missionId);
-    });
-    return () => {
-      socket.off("admin-mission-activate");
     };
   }, []);
 
@@ -151,38 +167,25 @@ const AdminPage = () => {
       <button onClick={resetAll} style={{ marginBottom: "1rem" }}>🔄 전체 초기화</button>
       <div className="mission-grid">
         {missions.map((num) => {
-          const isThisActive = activeMissions[num];
-          const isCompleted = completedMissions[num];
-          const hasFailed = failedMissions.includes(num);
-
-          const anyOtherBlocking = missions.some((id) => {
-            if (id === num) return false;
-            const active = activeMissions[id];
-            const complete = completedMissions[id];
-            const failed = failedMissions.includes(id);
-            return !complete && (active || failed);
-          });
-
-          const disableThis = !isThisActive && anyOtherBlocking;
+          const state = missionStates[num] || {};
+          const isDisabled = Object.values(missionStates).some(
+            (s, idx) => idx + 1 !== num && (s.inProgress || s.failed)
+          );
 
           return (
             <div key={num} className="mission-card">
               <div
                 className={`mission-box ${
-                  isCompleted
-                    ? "completed"
-                    : isThisActive
-                    ? "active"
-                    : hasFailed
-                    ? "failed"
-                    : ""
+                  state.success ? "completed" :
+                  state.inProgress ? "active" :
+                  state.failed ? "failed" : ""
                 }`}
                 onClick={() => {
-                  if (!disableThis) toggleMission(num);
+                  if (!isDisabled) toggleMission(num);
                 }}
                 style={{
-                  pointerEvents: disableThis ? "none" : "auto",
-                  opacity: disableThis ? 0.5 : 1,
+                  pointerEvents: isDisabled ? "none" : "auto",
+                  opacity: isDisabled ? 0.5 : 1,
                 }}
               >
                 미션 {num}
