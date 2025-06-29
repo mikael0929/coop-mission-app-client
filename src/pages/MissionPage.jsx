@@ -27,80 +27,38 @@ const MissionPage = () => {
   const { missionId } = useParams();
   const missionNum = Number(missionId);
   const [status, setStatus] = useState("checking");
-  const [timeLeft, setTimeLeft] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
   const [sentenceIndex, setSentenceIndex] = useState(0);
-  const [globalStatus, setGlobalStatus] = useState({ running: [], failed: [], completed: [] });
   const timerRef = useRef(null);
 
   useEffect(() => {
-    socket.emit("request-global-status");
-    socket.emit("check-failure", missionNum);
-
-    const handleGlobalStatus = ({ running, failed, completed }) => {
-      setGlobalStatus({ running, failed, completed });
+    const handleGlobal = ({ running, failed, completed }) => {
       if (completed.includes(missionNum)) {
         setIsCompleted(true);
         setStatus("done");
-      }
-    };
-
-    const handleFailureStatus = ({ missionId: id, isFailed }) => {
-      if (Number(id) === missionNum) {
-        if (!isCompleted) {
-          setStatus(isFailed ? "failed" : "ready");
-          if (!isFailed) setTimeLeft(missionDurations[missionNum] ?? 10);
-        }
-      }
-    };
-
-    const handleMissionComplete = (id) => {
-      if (Number(id) === missionNum) {
-        clearInterval(timerRef.current);
-        setIsCompleted(true);
-        setStatus("done");
-      }
-    };
-
-    const handleMissionStart = (id) => {
-      if (Number(id) === missionNum && status !== "active") {
-        const duration = missionDurations[missionNum] ?? 10;
-        setTimeLeft(duration);
-        setStatus("active");
-        startCountdown(duration);
-      }
-    };
-
-    const handleReset = (id) => {
-      if (id === -1 || id === missionNum) {
-        clearInterval(timerRef.current);
-        setIsCompleted(false);
+      } else if (failed.includes(missionNum)) {
+        setStatus("failed");
+      } else {
         setStatus("ready");
-        setTimeLeft(missionDurations[missionNum] ?? 10);
+        setTimeLeft(missionDurations[missionNum] || 10);
       }
     };
+    socket.emit("request-global-status");
+    socket.on("global-status", handleGlobal);
+    return () => socket.off("global-status", handleGlobal);
+  }, [missionNum]);
 
-    socket.on("global-status", handleGlobalStatus);
-    socket.on("failure-status", handleFailureStatus);
-    socket.on("mission-complete", handleMissionComplete);
-    socket.on("mission-start", handleMissionStart);
-    socket.on("participant-reset", handleReset);
-
-    return () => {
-      socket.off("global-status", handleGlobalStatus);
-      socket.off("failure-status", handleFailureStatus);
-      socket.off("mission-complete", handleMissionComplete);
-      socket.off("mission-start", handleMissionStart);
-      socket.off("participant-reset", handleReset);
-    };
-  }, [missionNum, isCompleted, status]);
-
-  const startCountdown = (duration) => {
-    let current = duration;
+  const handleMissionStart = () => {
+    if (status !== "ready") return;
+    socket.emit("mission-start", missionNum);
+    setStatus("active");
+    let duration = missionDurations[missionNum] || 10;
+    setTimeLeft(duration);
     timerRef.current = setInterval(() => {
-      current -= 1;
-      setTimeLeft(current);
-      if (current <= 0) {
+      duration -= 1;
+      setTimeLeft(duration);
+      if (duration <= 0) {
         clearInterval(timerRef.current);
         setStatus("failed");
         socket.emit("mark-failed", missionNum);
@@ -108,51 +66,41 @@ const MissionPage = () => {
     }, 1000);
   };
 
-  const handleStart = () => {
-    if (status === "failed" || status === "done") return;
+  useEffect(() => {
+    socket.on("mission-complete", (id) => {
+      if (id === missionNum) {
+        clearInterval(timerRef.current);
+        setIsCompleted(true);
+        setStatus("done");
+      }
+    });
+    return () => socket.off("mission-complete");
+  }, [missionNum]);
 
-    const isBlocked =
-      globalStatus.failed.length > 0 && !globalStatus.failed.includes(missionNum);
-    const isOtherRunning =
-      globalStatus.running.some(
-        (id) => id !== missionNum && !globalStatus.completed.includes(id)
-      );
-
-    if (isBlocked) return alert("실패한 미션이 있습니다. 선생님에게 가세요~");
-    if (isOtherRunning) return alert("다른 미션이 수행 중 입니다");
-
-    const duration = missionDurations[missionNum] ?? 10;
-    setTimeLeft(duration);
-    setStatus("active");
-    socket.emit("mission-start", missionNum);
-    startCountdown(duration);
-  };
+  useEffect(() => {
+    socket.on("participant-reset", (resetId) => {
+      if (resetId === -1 || resetId === missionNum) {
+        clearInterval(timerRef.current);
+        setIsCompleted(false);
+        setStatus("ready");
+        setTimeLeft(missionDurations[missionNum] || 10);
+      }
+    });
+    return () => socket.off("participant-reset");
+  }, [missionNum]);
 
   useEffect(() => {
     if (missionNum === 6 && status === "active") {
       const interval = setInterval(() => {
-        setSentenceIndex((prev) => (prev + 1) % sentenceSet.length);
+        setSentenceIndex((i) => (i + 1) % sentenceSet.length);
       }, 5000);
       return () => clearInterval(interval);
     }
   }, [missionNum, status]);
 
   if (status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 확인 중...</div>;
-
-  if (status === "failed") return (
-    <div style={{ padding: "2rem", textAlign: "center" }}>
-      <h1>❌ 미션 {missionId} 실패</h1>
-      <p>제한시간이 끝났습니다. 선생님께 가서 검사받으세요.</p>
-    </div>
-  );
-
-  if (status === "done") return (
-    <div style={{ padding: "2rem", textAlign: "center" }}>
-      <h1>✅ 미션 {missionId} 완료</h1>
-      <p>성공적으로 미션을 수행했습니다. 선생님께 가서 검사받으세요.</p>
-    </div>
-  );
-
+  if (status === "failed") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>❌ 미션 {missionId} 실패</h1><p>선생님께 가세요</p></div>;
+  if (status === "done") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>✅ 미션 {missionId} 완료</h1><p>성공! 선생님께 확인 받으세요</p></div>;
   if (status === "active") return (
     <div style={{ padding: "2rem", textAlign: "center" }}>
       <h1>🧩 미션 {missionId}</h1>
@@ -163,9 +111,8 @@ const MissionPage = () => {
         </>
       ) : (
         <>
-          <p>이 미션을 수행하세요!</p>
-          <img src={`/images/mission${missionId}.png`} alt={`미션 ${missionId}`} style={{ maxWidth: "300px", margin: "1rem auto" }} />
-          <p style={{ fontSize: "1.5rem" }}>⏳ 남은 시간: {timeLeft}초</p>
+          <img src={`/images/mission${missionId}.png`} alt="mission" style={{ maxWidth: 300 }} />
+          <p>⏳ 남은 시간: {timeLeft}초</p>
         </>
       )}
     </div>
@@ -174,7 +121,7 @@ const MissionPage = () => {
   return (
     <div style={{ padding: "2rem", textAlign: "center" }}>
       <h1>🎯 미션 {missionId}</h1>
-      <button onClick={handleStart} style={{ fontSize: "1.5rem", padding: "1rem" }}>
+      <button onClick={handleMissionStart} style={{ fontSize: "1.5rem", padding: "1rem" }}>
         미션 확인
       </button>
     </div>
