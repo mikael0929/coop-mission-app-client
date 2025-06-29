@@ -170,6 +170,22 @@ const AdminPage = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handleMissionUpdate = (id) => {
+      socket.emit("request-global-status");
+    };
+    socket.on("mission-complete", handleMissionUpdate);
+    socket.on("admin-reset-mission", handleMissionUpdate);
+    socket.on("admin-reset-all", handleMissionUpdate);
+    socket.on("mission-start", handleMissionUpdate);
+    return () => {
+      socket.off("mission-complete", handleMissionUpdate);
+      socket.off("admin-reset-mission", handleMissionUpdate);
+      socket.off("admin-reset-all", handleMissionUpdate);
+      socket.off("mission-start", handleMissionUpdate);
+    };
+  }, []);
+
   return (
     <div className="admin-container">
       <h1>🔧 관리자 화면</h1>

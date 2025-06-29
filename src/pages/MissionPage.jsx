@@ -26,7 +26,7 @@ const sentenceSet = [
 const MissionPage = () => {
   const { missionId } = useParams();
   const missionNum = Number(missionId);
-  const [status, setStatus] = useState("checking");
+  //const [status, setStatus] = useState("checking");
   const [timeLeft, setTimeLeft] = useState(missionDurations[missionNum] || 10);
   const [isCompleted, setIsCompleted] = useState(false);
   const [sentenceIndex, setSentenceIndex] = useState(0);
@@ -113,12 +113,12 @@ const MissionPage = () => {
     }
   }, [missionNum, status]);
 
-  if (status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 확인 중...</div>;
+  //if (status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 조회 중...</div>;
   if (status === "failed") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>❌ 미션 {missionId} 실패</h1><p>선생님께 가세요</p></div>;
   if (status === "done") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>✅ 미션 {missionId} 완료</h1><p>성공! 선생님께 확인 받으세요</p></div>;
   if (status === "active") return (
     <div style={{ padding: "2rem", textAlign: "center" }}>
-      <h1>🧩 미션 {missionId}</h1>
+      <h1>🧙미션 {missionId}</h1>
       {missionNum === 6 ? (
         <>
           <p style={{ fontSize: "1.5rem" }}>{sentenceSet[sentenceIndex]}</p>
