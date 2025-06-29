@@ -143,27 +143,30 @@ const AdminPage = () => {
 
   useEffect(() => {
     socket.emit("request-global-status");
-    socket.on("global-status", (serverState) => {
+    const handleStatus = (serverState) => {
       const newStates = {};
       const newTimers = {};
-      for (let i = 1; i <= 7; i++) {
+      missions.forEach((i) => {
+        const isRunning = serverState.running?.includes(i);
+        const isFailed = serverState.failed?.includes(i);
+        const isSuccess = serverState.completed?.includes(i);
         newStates[i] = {
           reset: false,
-          success: serverState.completed?.includes(i),
-          failed: serverState.failed?.includes(i),
-          inProgress: serverState.running?.includes(i),
+          success: isSuccess,
+          failed: isFailed,
+          inProgress: isRunning,
         };
-        newTimers[i] = missionDurations[i] || 10;
-        if (serverState.running?.includes(i)) {
-          startTimer(i);
-        }
-      }
+        newTimers[i] = missionDurations[i];
+        if (isRunning) startTimer(i);
+      });
       setMissionStates(newStates);
       setTimers(newTimers);
-    });
+    };
+
+    socket.on("global-status", handleStatus);
 
     return () => {
-      socket.off("global-status");
+      socket.off("global-status", handleStatus);
     };
   }, []);
 
