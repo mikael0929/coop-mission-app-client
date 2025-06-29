@@ -127,7 +127,7 @@ const AdminPage = () => {
 
   const completeMission = (num) => {
     if (!window.confirm(`미션 ${num}을 완료로 표시할까요?`)) return;
-    if (missionStates[num]?.success) return; // 이미 성공 상태일 경우 무시
+    if (missionStates[num]?.success) return;
     stopTimer(num);
     setMissionStates((prev) => ({
       ...prev,
@@ -148,10 +148,10 @@ const AdminPage = () => {
       const newTimers = {};
       for (let i = 1; i <= 7; i++) {
         newStates[i] = {
-          reset: serverState[i]?.reset || false,
-          success: serverState[i]?.success || false,
-          failed: serverState[i]?.failed || false,
-          inProgress: serverState[i]?.inProgress || false,
+          reset: false,
+          success: serverState.completed?.includes(i),
+          failed: serverState.failed?.includes(i),
+          inProgress: serverState.running?.includes(i),
         };
         newTimers[i] = missionDurations[i] || 10;
       }
