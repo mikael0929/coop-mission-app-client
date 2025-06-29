@@ -26,7 +26,7 @@ const sentenceSet = [
 const MissionPage = () => {
   const { missionId } = useParams();
   const missionNum = Number(missionId);
-  const [status, setStatus] = useState("checking");
+  const [status, setStatus] = useState("ready");
   const [timeLeft, setTimeLeft] = useState(missionDurations[missionNum] || 10);
   const [isCompleted, setIsCompleted] = useState(false);
   const [sentenceIndex, setSentenceIndex] = useState(0);
