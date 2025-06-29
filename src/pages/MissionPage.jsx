@@ -27,10 +27,11 @@ const MissionPage = () => {
   const { missionId } = useParams();
   const missionNum = Number(missionId);
   const [status, setStatus] = useState("checking");
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(missionDurations[missionNum] || 10);
   const [isCompleted, setIsCompleted] = useState(false);
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const timerRef = useRef(null);
+  const statusFetched = useRef(false);
 
   useEffect(() => {
     const handleGlobal = ({ running, failed, completed }) => {
@@ -43,6 +44,7 @@ const MissionPage = () => {
         setStatus("ready");
         setTimeLeft(missionDurations[missionNum] || 10);
       }
+      statusFetched.current = true;
     };
     socket.emit("request-global-status");
     socket.on("global-status", handleGlobal);
@@ -67,26 +69,28 @@ const MissionPage = () => {
   };
 
   useEffect(() => {
-    socket.on("mission-complete", (id) => {
+    const onComplete = (id) => {
       if (id === missionNum) {
         clearInterval(timerRef.current);
         setIsCompleted(true);
         setStatus("done");
       }
-    });
-    return () => socket.off("mission-complete");
+    };
+    socket.on("mission-complete", onComplete);
+    return () => socket.off("mission-complete", onComplete);
   }, [missionNum]);
 
   useEffect(() => {
-    socket.on("participant-reset", (resetId) => {
+    const onReset = (resetId) => {
       if (resetId === -1 || resetId === missionNum) {
         clearInterval(timerRef.current);
         setIsCompleted(false);
         setStatus("ready");
         setTimeLeft(missionDurations[missionNum] || 10);
       }
-    });
-    return () => socket.off("participant-reset");
+    };
+    socket.on("participant-reset", onReset);
+    return () => socket.off("participant-reset", onReset);
   }, [missionNum]);
 
   useEffect(() => {
@@ -98,7 +102,7 @@ const MissionPage = () => {
     }
   }, [missionNum, status]);
 
-  if (status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 확인 중...</div>;
+  if (!statusFetched.current || status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 확인 중...</div>;
   if (status === "failed") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>❌ 미션 {missionId} 실패</h1><p>선생님께 가세요</p></div>;
   if (status === "done") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>✅ 미션 {missionId} 완료</h1><p>성공! 선생님께 확인 받으세요</p></div>;
   if (status === "active") return (
@@ -121,6 +125,7 @@ const MissionPage = () => {
   return (
     <div style={{ padding: "2rem", textAlign: "center" }}>
       <h1>🎯 미션 {missionId}</h1>
+      <p>🕒 제한시간: {missionDurations[missionNum] || 10}초</p>
       <button onClick={handleMissionStart} style={{ fontSize: "1.5rem", padding: "1rem" }}>
         미션 확인
       </button>
