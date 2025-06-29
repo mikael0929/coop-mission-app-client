@@ -156,7 +156,7 @@ const AdminPage = () => {
           failed: isFailed,
           inProgress: isRunning,
         };
-        newTimers[i] = missionDurations[i];
+        newTimers[i] = serverState.durations?.[i] ?? missionDurations[i];
         if (isRunning) startTimer(i);
       });
       setMissionStates(newStates);
