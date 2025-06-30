@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 
@@ -26,64 +26,55 @@ const sentenceSet = [
 const MissionPage = () => {
   const { missionId } = useParams();
   const missionNum = Number(missionId);
-  const [status, setStatus] = useState("ready");
-  const [timeLeft, setTimeLeft] = useState(missionDurations[missionNum] || 10);
-  const [isCompleted, setIsCompleted] = useState(false);
+  const [status, setStatus] = useState("loading");
+  const [timeLeft, setTimeLeft] = useState(null);
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const timerRef = useRef(null);
 
   useEffect(() => {
-    const handleGlobal = ({ running, failed, completed }) => {
+    const handleStatus = ({ running, failed, completed, durations }) => {
       if (completed.includes(missionNum)) {
-        setIsCompleted(true);
         setStatus("done");
       } else if (failed.includes(missionNum)) {
         setStatus("failed");
       } else if (running.includes(missionNum)) {
         setStatus("active");
-        let duration = missionDurations[missionNum] || 10;
-        setTimeLeft(duration);
-        timerRef.current = setInterval(() => {
-          duration -= 1;
-          setTimeLeft(duration);
-          if (duration <= 0) {
-            clearInterval(timerRef.current);
-            setStatus("failed");
-            socket.emit("mark-failed", missionNum);
-          }
-        }, 1000);
+        const t = durations[missionNum] ?? missionDurations[missionNum];
+        setTimeLeft(t);
+        if (!timerRef.current) {
+          timerRef.current = setInterval(() => {
+            setTimeLeft((prev) => {
+              if (prev <= 1) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+                socket.emit("mark-failed", missionNum);
+                setStatus("failed");
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        }
       } else {
         setStatus("ready");
-        setTimeLeft(missionDurations[missionNum] || 10);
+        setTimeLeft(durations[missionNum] ?? missionDurations[missionNum]);
       }
     };
+
     socket.emit("request-global-status");
-    socket.on("global-status", handleGlobal);
-    return () => socket.off("global-status", handleGlobal);
+    socket.on("global-status", handleStatus);
+    return () => socket.off("global-status", handleStatus);
   }, [missionNum]);
 
-  const handleMissionStart = () => {
+  const handleStart = () => {
     if (status !== "ready") return;
     socket.emit("mission-start", missionNum);
-    setStatus("active");
-    let duration = missionDurations[missionNum] || 10;
-    setTimeLeft(duration);
-    timerRef.current = setInterval(() => {
-      duration -= 1;
-      setTimeLeft(duration);
-      if (duration <= 0) {
-        clearInterval(timerRef.current);
-        setStatus("failed");
-        socket.emit("mark-failed", missionNum);
-      }
-    }, 1000);
   };
 
   useEffect(() => {
     const onComplete = (id) => {
       if (id === missionNum) {
         clearInterval(timerRef.current);
-        setIsCompleted(true);
         setStatus("done");
       }
     };
@@ -95,9 +86,9 @@ const MissionPage = () => {
     const onReset = (resetId) => {
       if (resetId === -1 || resetId === missionNum) {
         clearInterval(timerRef.current);
-        setIsCompleted(false);
+        timerRef.current = null;
         setStatus("ready");
-        setTimeLeft(missionDurations[missionNum] || 10);
+        setTimeLeft(missionDurations[missionNum]);
       }
     };
     socket.on("participant-reset", onReset);
@@ -107,18 +98,18 @@ const MissionPage = () => {
   useEffect(() => {
     if (missionNum === 6 && status === "active") {
       const interval = setInterval(() => {
-        setSentenceIndex((i) => (i + 1) % sentenceSet.length);
+        setSentenceIndex((prev) => (prev + 1) % sentenceSet.length);
       }, 5000);
       return () => clearInterval(interval);
     }
   }, [missionNum, status]);
 
-  if (status === "checking") return <div style={{ padding: "2rem", textAlign: "center" }}>⏳ 상태 조회 중...</div>;
-  if (status === "failed") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>❌ 미션 {missionId} 실패</h1><p>선생님께 가세요</p></div>;
-  if (status === "done") return <div style={{ padding: "2rem", textAlign: "center" }}><h1>✅ 미션 {missionId} 완료</h1><p>성공! 선생님께 확인 받으세요</p></div>;
+  if (status === "loading") return <div style={{ textAlign: "center", padding: "2rem" }}>⏳ 상태 확인 중...</div>;
+  if (status === "failed") return <div style={{ textAlign: "center", padding: "2rem" }}><h1>❌ 미션 {missionId} 실패</h1><p>선생님께 가세요</p></div>;
+  if (status === "done") return <div style={{ textAlign: "center", padding: "2rem" }}><h1>✅ 미션 {missionId} 완료</h1><p>성공! 선생님께 확인 받으세요</p></div>;
   if (status === "active") return (
-    <div style={{ padding: "2rem", textAlign: "center" }}>
-      <h1>🧙미션 {missionId}</h1>
+    <div style={{ textAlign: "center", padding: "2rem" }}>
+      <h1>🧩 미션 {missionId}</h1>
       {missionNum === 6 ? (
         <>
           <p style={{ fontSize: "1.5rem" }}>{sentenceSet[sentenceIndex]}</p>
@@ -134,10 +125,10 @@ const MissionPage = () => {
   );
 
   return (
-    <div style={{ padding: "2rem", textAlign: "center" }}>
+    <div style={{ textAlign: "center", padding: "2rem" }}>
       <h1>🎯 미션 {missionId}</h1>
       <p>🕒 제한시간: {missionDurations[missionNum] || 10}초</p>
-      <button onClick={handleMissionStart} style={{ fontSize: "1.5rem", padding: "1rem" }}>
+      <button onClick={handleStart} style={{ fontSize: "1.5rem", padding: "1rem" }}>
         미션 확인
       </button>
     </div>
